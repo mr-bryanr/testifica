@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Captura de Finca - EUDR</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@latest/dist/leaflet-geoman.css" />
+    
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: 'Segoe UI', sans-serif; background: #f4f7f6; }
+        
+        #header-instrucciones { 
+            background: #2c3e50; color: white; padding: 15px; font-size: 14px; text-align: center; 
+            line-height: 1.4; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 1001; position: relative;
+        }
+        
+        #map { height: 55vh; width: 100%; z-index: 1; }
+        
+        #panel-control { height: 30vh; background: white; padding: 15px; text-align: center; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); }
+        
+        .btn-opcion { padding: 12px; margin: 5px; border: 2px solid #ccc; background: white; font-weight: bold; border-radius: 8px; cursor: pointer; width: 45%; }
+        .btn-opcion.seleccionado { border-color: #2196F3; background-color: #E3F2FD; color: #1976D2; }
+        
+        #btn-enviar { background-color: #27ae60; color: white; padding: 15px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; width: 90%; margin-top: 10px; cursor: pointer; display: none; }
+        #btn-enviar:disabled { background: #cccccc; cursor: not-allowed; }
+        
+        .leaflet-pm-toolbar .button-container { width: 50px !important; height: 50px !important; }
+        .leaflet-pm-toolbar .leaflet-pm-icon-marker, .leaflet-pm-toolbar .leaflet-pm-icon-polygon, .leaflet-pm-toolbar .leaflet-pm-icon-delete { background-size: 25px 25px !important; }
+    </style>
+</head>
+<body>
+
+    <div id="header-instrucciones">
+        <b>GUÍA DE CAPTURA:</b><br>
+        1. Elige el tipo de finca.<br>
+        2. Toca el ícono en el mapa y dibuja tu terreno.<br>
+        3. Presiona "Enviar" al finalizar.
+    </div>
+
+    <div id="map"></div>
+    
+    <div id="panel-control">
+        <h4 style="margin: 5px 0;">¿Tamaño de la finca?</h4>
+        <div>
+            <button id="btn-menos" class="btn-opcion">NO (< 4ha)</button>
+            <button id="btn-mas" class="btn-opcion">SÍ (> 4ha)</button>
+        </div>
+        <p id="instrucciones" style="font-size: 13px; color: #555;"></p>
+        <button id="btn-enviar" disabled>Enviar a la Cooperativa</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@latest/dist/leaflet-geoman.min.js"></script>
+
+    <script>
+        // Inicialización del mapa (Zoom 14 para ver nombres de lugares)
+        var map = L.map('map', {zoomControl: false}).setView([9.928, -84.090], 14); 
+        L.control.zoom({ position: 'topright' }).addTo(map);
+        
+        // Capa satelital + Etiquetas
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}').addTo(map);
+
+        let geometria = null;
+        const btnMenos = document.getElementById('btn-menos');
+        const btnMas = document.getElementById('btn-mas');
+        const btnEnviar = document.getElementById('btn-enviar');
+        const inst = document.getElementById('instrucciones');
+
+        function limpiarMapa() {
+            map.pm.removeControls();
+            map.eachLayer(l => { if(l.pm) map.removeLayer(l); });
+            geometria = null; btnEnviar.disabled = true;
+        }
+
+        btnMenos.addEventListener('click', () => {
+            limpiarMapa(); btnMenos.classList.add('seleccionado'); btnMas.classList.remove('seleccionado');
+            inst.innerHTML = "Toca el marcador y ponlo en el centro de tu finca.";
+            btnEnviar.style.display = "inline-block";
+            map.pm.addControls({ position: 'topleft', drawMarker: true, drawPolygon: false, removalMode: true });
+        });
+
+        btnMas.addEventListener('click', () => {
+            limpiarMapa(); btnMas.classList.add('seleccionado'); btnMenos.classList.remove('seleccionado');
+            inst.innerHTML = "Toca el polígono y dibuja el contorno de tu finca.";
+            btnEnviar.style.display = "inline-block";
+            map.pm.addControls({ position: 'topleft', drawMarker: false, drawPolygon: true, removalMode: true });
+        });
+
+        map.on('pm:create', e => { geometria = e.layer.toGeoJSON(); btnEnviar.disabled = false; inst.innerHTML = "¡Listo! Presiona Enviar."; });
+        map.on('pm:remove', () => { geometria = null; btnEnviar.disabled = true; });
+
+        btnEnviar.addEventListener('click', function() {
+            if(!geometria) return;
+            this.innerText = "Enviando...";
+            this.disabled = true;
+
+            const payload = { telefono: "UsuarioWeb", geojson: geometria };
+            const URL_GOOGLE = 'https://script.google.com/macros/s/AKfycbxVShO2dNlj-Df-58LSDqXat2r-Te9HAWJ3Bo1jn8isWrd3vS0lk-1ea7rO0A_Jx2n-Mw/exec';
+
+            fetch(URL_GOOGLE, { 
+                method: 'POST', 
+                mode: 'no-cors', // Necesario para evitar errores de bloqueo de Google
+                body: JSON.stringify(payload) 
+            })
+            .then(() => { 
+                alert("¡Datos enviados con éxito!"); 
+                location.reload(); 
+            })
+            .catch(err => { 
+                alert("Error al enviar. Verifica tu conexión."); 
+                this.disabled = false;
+                this.innerText = "Enviar a la Cooperativa";
+            });
+        });
+    </script>
+</body>
+</html>
